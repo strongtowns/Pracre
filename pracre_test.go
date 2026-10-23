@@ -419,6 +419,51 @@ func TestMultiYearStrata(t *testing.T) {
 	}
 }
 
+// TestCommonPropertyHoles merges strata units drawn in holes of their common property, and leaves
+// lots in holes of a road or an assessed parcel alone.
+func TestCommonPropertyHoles(t *testing.T) {
+	// The sample's 20391 96 AVE townhouses sit in holes of the 20381 96 AVE common property.
+	tabs, err := readFile("sample/langley-sample.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &Project{}
+	for _, tb := range tabs {
+		if d := (&Dataset{T: tb, Geoms: tb.Geoms, Roles: detectRoles(tb)}); !d.isRates() {
+			d.prepare(Pt{})
+			p.Datasets = append(p.Datasets, d)
+		}
+	}
+	m := buildModel(p)
+	for _, pa := range m.Parcels {
+		if !pa.Merged && pa.Label == "20391 96 AVE" {
+			t.Errorf("20391 96 AVE left on its own: %.0f m², $%.0f", pa.Area, pa.Value)
+		}
+		if !pa.Merged && pa.Label == "20381 96 AVE" && (pa.Area < 69000 || pa.Value < 160e6) {
+			t.Errorf("20381 96 AVE: %.0f m², $%.0f; want the 20391 units' land and value added", pa.Area, pa.Value)
+		}
+	}
+
+	// A block with a hole holding two lots, as a common property, a road and an assessed parcel.
+	sq := func(x0, y0, x1, y1 float64) Ring { return Ring{{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}, {x0, y0}} }
+	for _, c := range []struct {
+		label string
+		value float64
+		merge bool
+	}{{"1 MAIN ST", 0, true}, {"", 0, false}, {"1 MAIN ST", 5e5, false}} {
+		block := Parcel{G: polyGeom([]Poly{{sq(0, 0, 0.001, 0.001), sq(0.0002, 0.0002, 0.0008, 0.0008)}}), C: Pt{0.0001, 0.0005}, Area: 5000, Label: c.label, Value: c.value, HasValue: c.value > 0}
+		lots := []Parcel{block}
+		for _, x := range []float64{0.0002, 0.0005} {
+			lots = append(lots, Parcel{G: polyGeom([]Poly{{sq(x, 0.0002, x+0.0003, 0.0008)}}), C: Pt{x + 0.00015, 0.0005}, Area: 2000, Label: "3 MAIN ST", Value: 1e6, HasValue: true})
+		}
+		m := &Model{Parcels: lots}
+		m.mergeStacked(newSpatialIndex(m.Parcels))
+		if got := m.Parcels[1].Merged && m.Parcels[2].Merged && m.Parcels[0].Area == 9000; got != c.merge {
+			t.Errorf("block %q worth %.0f: merged %v, want %v", c.label, c.value, got, c.merge)
+		}
+	}
+}
+
 // TestImportFolder drops every part of a shapefile plus a rates table, as people select a folder's files.
 func TestImportFolder(t *testing.T) {
 	dir := t.TempDir()

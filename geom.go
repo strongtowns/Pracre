@@ -232,6 +232,16 @@ func pointInGeom(p Pt, g Geom) bool {
 	return false
 }
 
+// pointInHole reports whether p sits in a hole of g, on land g surrounds but doesn't include.
+func pointInHole(p Pt, g Geom) bool {
+	for _, poly := range g.Polys {
+		if len(poly) > 1 && pointInRing(p, poly[0]) && !pointInPoly(p, poly) {
+			return true
+		}
+	}
+	return false
+}
+
 type BBox struct{ MinX, MinY, MaxX, MaxY float64 }
 
 func emptyBBox() BBox { return BBox{math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)} }

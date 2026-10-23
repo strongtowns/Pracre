@@ -759,14 +759,29 @@ func (s *spatialIndex) find(p Pt) int {
 }
 
 // mergeStacked folds parcels that sit inside a bigger parcel (strata units drawn over their common
-// property, air-space parcels) or exactly on top of another into that lot, so a 40-unit townhouse
-// complex reads as one lot with 40 units of value instead of 40 slivers with absurd per-acre values.
+// property or in holes cut out of it, air-space parcels) or exactly on top of another into that lot,
+// so a 40-unit townhouse complex reads as one lot with 40 units of value instead of 40 slivers with
+// absurd per-acre values.
 func (m *Model) mergeStacked(grid *spatialIndex) int {
 	parent := make([]int, len(m.Parcels))
+	hole := make([]bool, len(m.Parcels))
 	for i := range parent {
 		parent[i] = -1
 		if m.Parcels[i].G.IsPoly() && m.Parcels[i].Area > 0 {
-			parent[i] = grid.container(i)
+			parent[i], hole[i] = grid.container(i)
+		}
+	}
+	// Common property holds several units; one lot in a hole is a separate property (a house
+	// surrounded by a hydro corridor or a school field).
+	units := map[int]int{}
+	for i, h := range hole {
+		if h {
+			units[parent[i]]++
+		}
+	}
+	for i, h := range hole {
+		if h && units[parent[i]] < 2 {
+			parent[i], hole[i] = -1, false
 		}
 	}
 	root := func(i int) int {
@@ -785,6 +800,11 @@ func (m *Model) mergeStacked(grid *spatialIndex) int {
 			continue
 		}
 		c, p := &m.Parcels[r], &m.Parcels[i]
+		if hole[i] {
+			// A hole's land isn't in the lot's area or shape yet.
+			c.Area += p.Area
+			c.G.Polys = append(c.G.Polys, p.G.Polys...)
+		}
 		if p.HasValue {
 			c.Value += p.Value
 			c.HasValue = true
@@ -853,9 +873,12 @@ func (m *Model) mergeSameAddress() int {
 	return n
 }
 
-// container is the smallest parcel that holds parcel i's label point and is clearly larger
-// (or the same shape listed earlier), or -1.
-func (s *spatialIndex) container(i int) int {
+// container is the smallest parcel that holds parcel i's label point and is clearly larger (or the
+// same shape listed earlier), or -1. hole is true when the point sits in one of its holes, which
+// only counts for common property: a parcel with an address or name and no value of its own, the
+// way strata, condo and HOA land is recorded. Road right-of-way shapes that surround whole blocks
+// have no address, and assessed lots around a separately owned one have a value.
+func (s *spatialIndex) container(i int) (best int, hole bool) {
 	p := &s.ps[i]
 	pt := p.C
 	best, bestA := -1, math.Inf(1)
@@ -866,11 +889,16 @@ func (s *spatialIndex) container(i int) int {
 		q := &s.ps[j]
 		bigger := q.Area > p.Area*1.2
 		same := j < i && math.Abs(q.Area-p.Area) <= p.Area*0.01 && math.Abs(q.C[0]-pt[0]) < 1e-5 && math.Abs(q.C[1]-pt[1]) < 1e-5
-		if (bigger || same) && q.Area < bestA && pointInGeom(pt, q.G) {
-			best, bestA = j, q.Area
+		common := q.Label != "" && q.Label != q.Key && !(q.HasValue && q.Value > 0) && !(q.HasTax && q.Tax > 0)
+		if (bigger || same) && q.Area < bestA {
+			if pointInGeom(pt, q.G) {
+				best, bestA, hole = j, q.Area, false
+			} else if bigger && common && pointInHole(pt, q.G) {
+				best, bestA, hole = j, q.Area, true
+			}
 		}
 	}
-	return best
+	return best, hole
 }
 
 // ---------------------------------------------------------------- checklist
