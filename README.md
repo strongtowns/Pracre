@@ -12,7 +12,7 @@
 
 Pracre turns the files your municipality already publishes into value per acre maps. Import parcel shapes and assessment values in whatever format you have, and Pracre works out which columns hold IDs, values, tax classes, lot sizes and locations, links the files together and draws the result over OpenStreetMap. A checklist on the left says what is done and what is still missing.
 
-The map shows which places pay their way. Tall red columns produce the most tax per acre, low blue ones the least. For the bundled Township of Langley sample, half of all tax revenue comes from under a tenth of the land.
+The map shows which places pay their way. Tall red columns produce the most tax per acre, low blue ones the least. For the bundled Township of Langley sample, half of all tax revenue comes from under 4% of the land.
 
 ## Features
 
@@ -68,7 +68,7 @@ Windows may show a SmartScreen notice for a new app; choose More info, then Run 
 
 Most assessment authorities and municipal open data portals publish parcel boundaries and assessment rolls. Search your city or county's open data site for "parcels", "assessment", "tax roll" or "property". In BC, municipal open data portals and BC Assessment rolls work well; in the United States, county GIS and assessor sites usually offer parcel downloads with assessed values.
 
-File > Sample Data has two bundled samples. The Township of Langley sample covers Walnut Grove, Fort Langley and the farmland between them, from Township of Langley open data (2024 parcels and assessments) under the Open Government Licence - Township of Langley. The Port Huron sample has every parcel in the City of Port Huron, Michigan, with 2024 taxable values, from the city's parcel data.
+File > Sample Data has two bundled samples. The Township of Langley sample covers the whole township, from Township of Langley open data (2024 parcels and assessments) under the Open Government Licence - Township of Langley. The Port Huron sample has every parcel in the City of Port Huron, Michigan, with 2024 taxable values, from the city's parcel data.
 
 Coordinate system parameters come from the EPSG Geodetic Parameter Dataset (© IOGP) and Esri's projection definitions, by way of PROJ's database. To refresh `epsg/epsg.txt.gz` after a PROJ release, run `python epsg/gen.py path/to/proj.db` from the `epsg` folder; `proj.db` ships with PROJ and with the pyproj package.
 

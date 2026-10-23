@@ -21,7 +21,7 @@ import (
 //go:embed sample/*.zip
 var samples embed.FS
 
-// samplePlaces are the bundled extracts, each with a point inside it as the import's location hint.
+// samplePlaces are the bundled samples, each with a point inside it as the import's location hint.
 var samplePlaces = map[string]Pt{"langley": {-122.6, 49.15}, "port-huron": {-82.43, 42.98}}
 
 // App is bound to the front end: every exported method is callable as window.go.main.App.<Method>.
@@ -547,8 +547,8 @@ func writeAtomic(path string, data []byte) error {
 	return os.Rename(tmp, path)
 }
 
-// LoadSample adds a bundled extract: "langley" (Township of Langley: Walnut Grove, Fort Langley and
-// the farmland between) or "port-huron" (City of Port Huron, Michigan).
+// LoadSample adds a bundled sample: "langley" (the whole Township of Langley) or "port-huron"
+// (the City of Port Huron, Michigan).
 func (a *App) LoadSample(name string) ImportResult {
 	at, ok := samplePlaces[name]
 	data, err := samples.ReadFile("sample/" + name + "-sample.zip")

@@ -741,11 +741,7 @@ function initControls() {
 const ACTIONS = {
   new: async () => {
     if (!(await api().ConfirmDiscard())) return;
-    await api().NewProject();
-    set = { ...DEFAULTS };
-    sel = null;
-    hadData = false;
-    map.setStyle(styleFor(set.basemap));
+    await resetProject();
     map.jumpTo({ center: [-98, 44], zoom: 3, pitch: 0, bearing: 0 });
     await refresh();
     status("New project");
@@ -831,8 +827,20 @@ async function afterOpen() {
   status("Opened " + (S.project || "project"));
 }
 
-function loadSample(name, place) {
+async function resetProject() {
+  await api().NewProject();
+  const oldBase = set.basemap;
+  set = { ...DEFAULTS };
+  sel = null;
+  hadData = false;
+  if (set.basemap !== oldBase) map.setStyle(styleFor(set.basemap));
+}
+
+// A sample opens like a project, in place of whatever is loaded.
+async function loadSample(name, place) {
+  if (!(await api().ConfirmDiscard())) return;
   return guard(async () => {
+    await resetProject();
     const res = await api().LoadSample(name);
     if (res.errors && res.errors.length) alertBox("Sample data", res.errors.join("\n"));
     if (!set.title) set.title = place + ", value per acre";
