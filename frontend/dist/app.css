@@ -189,10 +189,8 @@ details.attrs td:first-child { color: var(--muted); width: 45%; }
 .mapcard { position: absolute; background: rgba(255,255,255,.96); border: 1px solid var(--line-dark); box-shadow: 3px 3px 0 rgba(15,36,68,.14); z-index: 2; }
 #insight { top: 10px; left: 10px; max-width: 330px; }
 #insight .ihead { background: var(--navy); color: #fff; padding: 5px 10px; font-weight: 600; border-bottom: 2px solid var(--orange); }
-#insight .ibody { padding: 8px 10px; }
-#insight .ibig { font-size: 15px; line-height: 1.3; }
-#insight .ibig b { color: var(--orange); font-size: 20px; }
-#insight .imeta { color: var(--muted); margin-top: 4px; }
+#insight .ibody { padding: 6px 10px; }
+#insight .imeta { color: var(--muted); }
 #legend { left: 10px; bottom: 30px; min-width: 190px; padding: 7px 9px 8px; }
 #legend b { display: block; font-size: 12px; margin-bottom: 4px; color: var(--navy); }
 #legend .lrow { display: grid; grid-template-columns: 24px 1fr auto; gap: 8px; align-items: center; font-size: 11.5px; line-height: 17px; }

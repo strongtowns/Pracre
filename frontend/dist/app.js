@@ -28,7 +28,7 @@ const BASEMAPS = {
 };
 const DEFAULTS = {
   metric: "auto", per: "acre", mode: "hex", size: 200, basis: "net", gap: 0.08, classes: 7, method: "quantile",
-  ramp: "heat", opacity: 0.88, height: 100, cap: true, basemap: "light", title: "", view: "3d", currency: "$",
+  ramp: "heat", opacity: 0.88, height: 100, cap: true, basemap: "light", title: "", summary: true, view: "3d", currency: "$",
 };
 const ROLE_GROUPS = [
   ["", [["", "Not used"]]],
@@ -432,15 +432,13 @@ function renderStats() {
   const st = S.stats;
   const ins = $("#insight");
   const m = metric();
-  const share = m === "tax" ? st.halfLandTax : st.halfLandValue;
-  if (!st.parcels || (!st.hasValue && !st.hasTax)) {
+  if (!set.summary || !st.parcels || (!st.hasValue && !st.hasTax)) {
     ins.classList.add("hidden");
   } else {
     ins.classList.remove("hidden");
     ins.innerHTML = "";
     ins.append(h("div", { class: "ihead" }, set.title || metricLabel()));
     const body = h("div", { class: "ibody" });
-    if (share > 0) body.append(h("div", { class: "ibig", html: "Half of all " + (m === "tax" ? "tax revenue" : "property value") + " comes from <b>" + pct(share) + "</b> of the land." }));
     const total = m === "tax" ? st.totalTax : st.totalValue;
     body.append(h("div", { class: "imeta" }, (m === "tax" ? "Tax " : "Value ") + money(total) + " · " + (st.totalAcres ? int(st.totalAcres) + " acres · " : "") + int(st.parcels) + " parcels"));
     ins.append(body);
@@ -608,6 +606,7 @@ function syncControls() {
   $("#rngHeight").value = set.height;
   $("#outHeight").textContent = set.height + "%";
   $("#chkCap").checked = set.cap;
+  $("#chkSummary").checked = set.summary;
   $("#selBase").value = set.basemap;
   if (document.activeElement !== $("#txtTitle")) $("#txtTitle").value = set.title;
   $$("#ramps .ramp").forEach((r) => r.classList.toggle("on", r.dataset.k === set.ramp));
@@ -677,6 +676,7 @@ function initControls() {
   $("#rngOpacity").oninput = (e) => change({ opacity: Number(e.target.value) / 100 });
   $("#rngHeight").oninput = (e) => change({ height: Number(e.target.value) });
   $("#chkCap").onchange = (e) => change({ cap: e.target.checked });
+  $("#chkSummary").onchange = (e) => change({ summary: e.target.checked });
   $("#selBase").onchange = (e) => change({ basemap: e.target.value });
   $("#txtTitle").oninput = (e) => change({ title: e.target.value });
   $("#selClear").onclick = () => select(null);
