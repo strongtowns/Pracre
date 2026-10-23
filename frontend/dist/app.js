@@ -766,8 +766,8 @@ const ACTIONS = {
     const paths = await api().ChooseFiles();
     if (paths && paths.length) await importPaths(paths);
   }),
-  sample: () => loadSample("langley", "Township of Langley", "Loaded the Township of Langley sample: Walnut Grove, Fort Langley and the farmland between"),
-  "sample-porthuron": () => loadSample("port-huron", "Port Huron", "Loaded the Port Huron, Michigan sample: every parcel in the city, with 2024 taxable values"),
+  sample: () => loadSample("langley", "Township of Langley"),
+  "sample-porthuron": () => loadSample("port-huron", "Port Huron"),
   rates: () => {
     $("#app").classList.remove("nobottom");
     const first = $("#ratesGrid td.unrated input") || $("#ratesGrid input");
@@ -831,14 +831,13 @@ async function afterOpen() {
   status("Opened " + (S.project || "project"));
 }
 
-function loadSample(name, place, done) {
+function loadSample(name, place) {
   return guard(async () => {
     const res = await api().LoadSample(name);
     if (res.errors && res.errors.length) alertBox("Sample data", res.errors.join("\n"));
     if (!set.title) set.title = place + ", value per acre";
     await refresh(true);
-    status(done);
-  }, "Loading the " + place + " sample…");
+  }, "Loading sample data…");
 }
 
 async function saveProject(as) {
