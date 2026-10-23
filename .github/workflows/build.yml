@@ -1,0 +1,185 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Go 1.25 keeps macOS 12 and Windows 10 support.
+  GO_VERSION: "1.25.x"
+  WAILS_VERSION: "v2.17.0"
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - run: go vet . && go test .
+
+  build:
+    needs: test
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+          - os: ubuntu-22.04
+            name: Linux
+          - os: macos-latest
+            name: macOS
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then V="${GITHUB_REF_NAME#v}"; else V="0.0.0"; fi
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          python3 - "$V" <<'EOF'
+          import json, sys
+          d = json.load(open("wails.json"))
+          d["info"]["productVersion"] = sys.argv[1].split("-")[0]
+          json.dump(d, open("wails.json", "w"), indent=2)
+          EOF
+
+      - name: Install Wails
+        shell: bash
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+
+      # ---------------------------------------------------------------- Windows
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            if (Test-Path "C:\Program Files (x86)\NSIS\makensis.exe") { $env:PATH += ";C:\Program Files (x86)\NSIS" } else { choco install nsis -y --no-progress; $env:PATH += ";C:\Program Files (x86)\NSIS" }
+          }
+          wails build -platform windows/amd64 -skipbindings -nsis -trimpath -ldflags "-X main.Version=$env:VERSION"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item build/bin/Pracre-amd64-installer.exe dist/Pracre-Windows-x64-Setup.exe
+          Compress-Archive -Path build/bin/Pracre.exe -DestinationPath dist/Pracre-Windows-x64-Portable.zip
+
+      # ---------------------------------------------------------------- Linux
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libgtk-3-dev libwebkit2gtk-4.1-dev
+          wails build -platform linux/amd64 -tags webkit2_41 -skipbindings -trimpath -ldflags "-X main.Version=$VERSION"
+          mkdir -p dist pkg/Pracre
+          cp build/bin/Pracre pkg/Pracre/pracre
+          cp build/appicon.png pkg/Pracre/pracre.png
+          cp build/linux/pracre.desktop build/linux/pracre-mime.xml build/linux/install.sh pkg/Pracre/
+          cp LICENSE pkg/Pracre/
+          tar -C pkg -czf dist/Pracre-Linux-x64.tar.gz Pracre
+          # Debian/Ubuntu package
+          D=pkg/deb
+          mkdir -p $D/DEBIAN $D/usr/bin $D/usr/share/applications $D/usr/share/icons/hicolor/512x512/apps $D/usr/share/mime/packages $D/usr/share/doc/pracre
+          install -m 755 build/bin/Pracre $D/usr/bin/pracre
+          install -m 644 build/linux/pracre.desktop $D/usr/share/applications/pracre.desktop
+          install -m 644 build/appicon.png $D/usr/share/icons/hicolor/512x512/apps/pracre.png
+          install -m 644 build/linux/pracre-mime.xml $D/usr/share/mime/packages/pracre.xml
+          install -m 644 LICENSE $D/usr/share/doc/pracre/copyright
+          DEBV="${VERSION}"; [[ "$DEBV" == 0.0.0 ]] && DEBV="0.0.0~dev"
+          cat > $D/DEBIAN/control <<EOF
+          Package: pracre
+          Version: ${DEBV}
+          Section: science
+          Priority: optional
+          Architecture: amd64
+          Depends: libgtk-3-0 | libgtk-3-0t64, libwebkit2gtk-4.1-0
+          Maintainer: James Hansen <1550976+jameshansen@users.noreply.github.com>
+          Homepage: https://github.com/strongtowns/Pracre
+          Description: Value per acre maps for Strong Towns advocates
+           Pracre turns parcel and assessment data into value per acre and tax per
+           acre maps in 2D and 3D, with web, image, GeoJSON, CSV and 3D model exports.
+          EOF
+          dpkg-deb --root-owner-group --build $D dist/Pracre-Linux-x64.deb
+
+      # ---------------------------------------------------------------- macOS
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          wails build -platform darwin/universal -skipbindings -trimpath -ldflags "-X main.Version=$VERSION"
+          APP=build/bin/Pracre.app
+          if [[ -n "$MACOS_CERTIFICATE" ]]; then
+            # Developer ID signing with the hardened runtime, ready for notarization.
+            KC=build.keychain; KCPW=$(uuidgen)
+            echo "$MACOS_CERTIFICATE" | base64 --decode > cert.p12
+            security create-keychain -p "$KCPW" $KC
+            security default-keychain -s $KC
+            security unlock-keychain -p "$KCPW" $KC
+            security import cert.p12 -k $KC -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPW" $KC
+            rm cert.p12
+            codesign --force --deep --options runtime --timestamp --sign "$MACOS_SIGNING_IDENTITY" "$APP"
+          else
+            # Ad-hoc signature: required for Apple Silicon, Gatekeeper asks once on first open.
+            codesign --force --deep --sign - "$APP"
+          fi
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          mkdir -p dist dmg
+          cp -R "$APP" dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname Pracre -srcfolder dmg -ov -format UDZO dist/Pracre-macOS-Universal.dmg
+          if [[ -n "$MACOS_CERTIFICATE" ]]; then
+            codesign --force --timestamp --sign "$MACOS_SIGNING_IDENTITY" dist/Pracre-macOS-Universal.dmg
+            if [[ -n "$APPLE_ID" ]]; then
+              xcrun notarytool submit dist/Pracre-macOS-Universal.dmg --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+              xcrun stapler staple dist/Pracre-macOS-Universal.dmg
+              xcrun stapler staple "$APP"
+            fi
+          fi
+          ditto -c -k --keepParent "$APP" dist/Pracre-macOS-Universal.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pracre-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist && sha256sum * > SHA256SUMS.txt && cd ..
+          NOTES=docs/release-notes.md
+          [[ -f "docs/releases/${GITHUB_REF_NAME}.md" ]] && NOTES="docs/releases/${GITHUB_REF_NAME}.md"
+          { cat "$NOTES"; echo; echo '### Checksums'; echo '```'; cat dist/SHA256SUMS.txt; echo '```'; } > notes.md
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --title "Pracre ${GITHUB_REF_NAME#v}" --notes-file notes.md --latest
+          fi

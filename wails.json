@@ -1,0 +1,28 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "Pracre",
+  "outputfilename": "Pracre",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dir": "frontend",
+  "author": {
+    "name": "Strong Towns",
+    "email": ""
+  },
+  "info": {
+    "companyName": "Strong Towns",
+    "productName": "Pracre",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright 2026 Strong Towns contributors. GNU GPL v3.",
+    "comments": "Value per acre maps for Strong Towns advocates",
+    "fileAssociations": [
+      {
+        "ext": "pracre",
+        "name": "Pracre Project",
+        "description": "Pracre value per acre project",
+        "iconName": "pracreFile",
+        "role": "Editor"
+      }
+    ]
+  }
+}

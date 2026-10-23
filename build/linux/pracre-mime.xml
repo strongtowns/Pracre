@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-pracre">
+    <comment>Pracre value per acre project</comment>
+    <glob pattern="*.pracre"/>
+  </mime-type>
+</mime-info>

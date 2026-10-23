@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Pracre
+GenericName=Value per Acre Maps
+Comment=Map property value and tax revenue per acre in 2D and 3D
+Exec=pracre %f
+Icon=pracre
+Terminal=false
+Categories=Education;Science;Geography;Office;
+Keywords=value per acre;strong towns;tax;parcels;map;
+MimeType=application/x-pracre;
+StartupWMClass=pracre

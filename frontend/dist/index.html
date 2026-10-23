@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pracre</title>
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <header id="toolbar">
+    <div class="tgroup">
+      <div class="tbuttons">
+        <button class="tb" data-act="new" title="New project (Ctrl+N)"><img src="img/icons/new.png" alt=""><span>New</span></button>
+        <button class="tb" data-act="open" title="Open a project (Ctrl+O)"><img src="img/icons/open.png" alt=""><span>Open</span></button>
+        <button class="tb" data-act="save" title="Save the project (Ctrl+S)"><img src="img/icons/save.png" alt=""><span>Save</span></button>
+      </div>
+      <div class="tlabel">Project</div>
+    </div>
+    <div class="tgroup">
+      <div class="tbuttons">
+        <button class="tb wide" data-act="import" title="Import parcels, values or tax rates (Ctrl+I). You can also drop files on the window."><img src="img/icons/import.png" alt=""><span>Import Data</span></button>
+        <button class="tb wide" data-act="rates" title="Tax rates per class or code (Ctrl+T)"><img src="img/icons/rates.png" alt=""><span>Tax Rates</span></button>
+        <button class="tb wide drop" data-act="basemap" title="Choose the OpenStreetMap base map"><img src="img/icons/basemap.png" alt=""><span>Base Map ▾</span></button>
+      </div>
+      <div class="tlabel">Data</div>
+    </div>
+    <div class="tgroup">
+      <div class="tbuttons">
+        <button class="tb" data-act="view2d" data-toggle="view" title="Flat map (Ctrl+2)"><img src="img/icons/view2d.png" alt=""><span>2D</span></button>
+        <button class="tb" data-act="view3d" data-toggle="view" title="3D map (Ctrl+3)"><img src="img/icons/view3d.png" alt=""><span>3D</span></button>
+        <i class="tsep"></i>
+        <button class="tb" data-act="parcels" data-toggle="mode" title="One shape per parcel (Ctrl+P)"><img src="img/icons/parcels.png" alt=""><span>Parcels</span></button>
+        <button class="tb" data-act="hex" data-toggle="mode" title="Hexagon tiles (Ctrl+H)"><img src="img/icons/hex.png" alt=""><span>Hex</span></button>
+        <button class="tb" data-act="square" data-toggle="mode" title="Square tiles (Ctrl+G)"><img src="img/icons/square.png" alt=""><span>Square</span></button>
+        <i class="tsep"></i>
+        <button class="tb" data-act="fit" title="Zoom to the data (Ctrl+0)"><img src="img/icons/zoom-fit.png" alt=""><span>Fit</span></button>
+      </div>
+      <div class="tlabel">View</div>
+    </div>
+    <div class="tgroup">
+      <div class="tbuttons">
+        <button class="tb wide" data-act="export-image" title="Save the map as a PNG image (Ctrl+E)"><img src="img/icons/export-image.png" alt=""><span>Export Image</span></button>
+        <button class="tb wide drop" data-act="export3d" title="3D web page or 3D model"><img src="img/icons/export-3d.png" alt=""><span>Export 3D ▾</span></button>
+        <button class="tb wide drop" data-act="export2d" title="2D web page, GeoJSON or CSV"><img src="img/icons/export-web.png" alt=""><span>Export 2D ▾</span></button>
+      </div>
+      <div class="tlabel">Export</div>
+    </div>
+    <div class="tspacer"></div>
+    <div class="brand" data-act="about" title="About Pracre">
+      <img src="img/logo-64.png" alt="">
+      <div><b>Pracre</b><span>Value per Acre</span></div>
+    </div>
+  </header>
+
+  <aside id="left" class="dock">
+    <section class="panel" id="checkPanel">
+      <h2><img src="img/icons/checklist.png" alt=""><span>Data Checklist</span><em id="checkCount"></em></h2>
+      <ol id="checklist"></ol>
+    </section>
+    <section class="panel grow" id="layersPanel">
+      <h2><span>Imported Data</span><button class="hbtn" data-act="import" title="Import data">+</button></h2>
+      <ul id="datasets"></ul>
+      <div class="dropzone" data-act="import"><b>Drop files here</b><span>CSV, Excel, GeoJSON, Shapefile (.zip), KML, Esri JSON</span></div>
+    </section>
+  </aside>
+
+  <main id="center">
+    <div id="map"></div>
+    <div id="insight" class="mapcard hidden"></div>
+    <div id="legend" class="mapcard hidden"></div>
+    <div id="empty" class="hidden">
+      <div class="emptycard">
+        <img class="hero" src="img/hero.png" alt="">
+        <div class="emptybody">
+          <h1>Map what every acre of your town returns.</h1>
+          <p>Pracre turns parcel and assessment data into value per acre maps in 2D and 3D, so you can show which places pay their way.</p>
+          <ol class="steps">
+            <li><b>Parcels</b> shapes or points, any common GIS or table format</li>
+            <li><b>Values</b> assessed values or tax amounts, joined automatically</li>
+            <li><b>Tax rates</b> optional, to map tax revenue per acre</li>
+          </ol>
+          <div class="emptyact">
+            <button class="btn primary" data-act="import">Import Data…</button>
+            <button class="btn" data-act="sample">Try the Langley sample</button>
+          </div>
+          <small>Or drop your files anywhere on this window.</small>
+        </div>
+      </div>
+    </div>
+    <div id="dropcover" class="hidden"><div>Drop to import</div></div>
+  </main>
+
+  <aside id="right" class="dock">
+    <section class="panel grow" id="displayPanel">
+      <h2><span>Display</span></h2>
+      <div class="scroll">
+        <fieldset>
+          <legend>Measure</legend>
+          <div class="seg" id="segMetric">
+            <button data-v="value">Value</button><button data-v="tax">Tax revenue</button>
+          </div>
+          <label class="row">Per
+            <select id="selPer"><option value="acre">acre</option><option value="hectare">hectare</option></select>
+          </label>
+        </fieldset>
+        <fieldset>
+          <legend>Shapes</legend>
+          <div class="seg" id="segMode">
+            <button data-v="parcels">Parcels</button><button data-v="hex">Hex</button><button data-v="square">Square</button>
+          </div>
+          <label class="row tileonly">Tile size <output id="outSize"></output></label>
+          <input type="range" id="rngSize" class="tileonly" min="0" max="1000" step="1">
+          <label class="row tileonly">Divide by
+            <select id="selBasis">
+              <option value="net">Lot area in the tile</option>
+              <option value="gross">Whole tile area</option>
+            </select>
+          </label>
+          <label class="row tileonly">Gap <output id="outGap"></output></label>
+          <input type="range" id="rngGap" class="tileonly" min="0" max="30" step="1">
+        </fieldset>
+        <fieldset>
+          <legend>Colours</legend>
+          <div id="ramps"></div>
+          <label class="row">Classes
+            <select id="selClasses"></select>
+          </label>
+          <label class="row">Breaks
+            <select id="selMethod">
+              <option value="quantile">Quantile (equal counts)</option>
+              <option value="jenks">Natural breaks (Jenks)</option>
+              <option value="log">Logarithmic</option>
+              <option value="equal">Equal interval</option>
+            </select>
+          </label>
+          <label class="row">Opacity <output id="outOpacity"></output></label>
+          <input type="range" id="rngOpacity" min="20" max="100" step="1">
+        </fieldset>
+        <fieldset>
+          <legend>3D</legend>
+          <label class="row">Height <output id="outHeight"></output></label>
+          <input type="range" id="rngHeight" min="5" max="400" step="1">
+          <label class="check"><input type="checkbox" id="chkCap"> Cap spikes at the 99th percentile</label>
+        </fieldset>
+        <fieldset>
+          <legend>Map</legend>
+          <label class="row">Base map
+            <select id="selBase"></select>
+          </label>
+          <label class="row">Title</label>
+          <input type="text" id="txtTitle" placeholder="Value per acre">
+        </fieldset>
+      </div>
+    </section>
+    <section class="panel" id="selPanel">
+      <h2><span>Selection</span><button class="hbtn" id="selClear" title="Clear selection">×</button></h2>
+      <div id="selection" class="scroll"><p class="hint">Click a parcel or tile on the map.</p></div>
+    </section>
+  </aside>
+
+  <section id="bottom">
+    <div class="panel" id="ratesPanel">
+      <h2><img src="img/icons/rates.png" alt=""><span>Tax Rates</span>
+        <select id="selRateUnit" title="How rates are written">
+          <option value="mill">per $1,000 (mill rate)</option>
+          <option value="percent">percent (%)</option>
+          <option value="fraction">fraction (0.0125)</option>
+        </select>
+      </h2>
+      <div class="gridwrap">
+        <table class="grid" id="ratesGrid">
+          <thead><tr><th style="width:34%">Tax class or code</th><th>Description</th><th style="width:20%" class="num">Rate</th><th style="width:22%" class="num">Value in data</th><th style="width:22px"></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="gridbar">
+        <button class="btn" id="btnImportRates" title="Import a table of codes and rates (CSV, Excel, JSON)">Import…</button>
+        <button class="btn" id="btnAddRate">Add Row</button>
+        <button class="btn" id="btnDefaultRate" title="A rate for properties without a tax class">Default Rate</button>
+        <span class="spacer"></span>
+        <span id="levy" class="muted"></span>
+      </div>
+    </div>
+    <div class="panel" id="tablePanel">
+      <h2><span id="tableTitle">Parcels</span><input type="search" id="tableSearch" placeholder="Search address or ID"></h2>
+      <div class="gridwrap">
+        <table class="grid" id="parcelGrid">
+          <thead><tr>
+            <th data-sort="label">Parcel</th>
+            <th data-sort="a" class="num" style="width:13%">Area</th>
+            <th data-sort="t" class="num" style="width:18%" id="thTotal">Value</th>
+            <th data-sort="v" class="num" style="width:20%" id="thPer">Per acre</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="gridbar"><span id="tableNote" class="muted"></span></div>
+    </div>
+  </section>
+
+  <footer id="status">
+    <span id="stMsg" class="grow">Ready</span>
+    <span id="stBusy" class="hidden"><i></i></span>
+    <span id="stParcels"></span>
+    <span id="stTotal"></span>
+    <span id="stAcres"></span>
+    <span id="stCursor" class="mono"></span>
+    <span id="stZoom" class="mono"></span>
+  </footer>
+</div>
+
+<div id="menuPop" class="popup hidden"></div>
+<div id="tip" class="hidden"></div>
+<div id="modal" class="hidden"></div>
+
+<script src="vendor/maplibre-gl.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
