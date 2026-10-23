@@ -69,7 +69,6 @@ function money(v) {
 }
 const int = (v) => Math.round(v).toLocaleString("en-US");
 const areaFmt = (v) => (v >= 100 ? int(v) : v >= 10 ? v.toFixed(1) : v.toFixed(2));
-const pct = (v) => (v * 100 < 10 ? (v * 100).toFixed(1) : Math.round(v * 100)) + "%";
 const perWord = () => (set.per === "hectare" ? "hectare" : "acre");
 const perShort = () => (set.per === "hectare" ? "ha" : "ac");
 function metric() {
@@ -843,8 +842,8 @@ async function loadSample(name, place) {
     await resetProject();
     const res = await api().LoadSample(name);
     if (res.errors && res.errors.length) alertBox("Sample data", res.errors.join("\n"));
-    if (!set.title) set.title = place + ", value per acre";
     await refresh(true);
+    change({ title: place + ", " + metricLabel().toLowerCase() }); // named for the measure it opens with
   }, "Loading sample data…");
 }
 
@@ -1191,25 +1190,14 @@ function composeImage() {
   const font = (w, s) => (g.font = w + " " + s + "px " + getComputedStyle(document.body).fontFamily);
   // title card
   const title = set.title || metricLabel();
-  const st = S.stats;
-  const share = metric() === "tax" ? st.halfLandTax : st.halfLandValue;
-  const sub = share > 0 ? "Half of all " + (metric() === "tax" ? "tax revenue" : "property value") + " comes from " + pct(share) + " of the land." : "";
   font("600", 18);
-  const tw = Math.max(g.measureText(title).width, (font("400", 13), g.measureText(sub).width)) + 28;
+  const tw = g.measureText(title).width + 28;
   g.fillStyle = "#0f2444";
   g.fillRect(14, 14, tw, 34);
   g.fillStyle = "#f26522";
   g.fillRect(14, 48, tw, 3);
-  font("600", 18);
   g.fillStyle = "#fff";
   g.fillText(title, 28, 37);
-  if (sub) {
-    g.fillStyle = "rgba(255,255,255,0.95)";
-    g.fillRect(14, 51, tw, 26);
-    font("400", 13);
-    g.fillStyle = "#13213a";
-    g.fillText(sub, 28, 69);
-  }
   // legend
   if (meta && meta.breaks) {
     const items = legendItems().reverse();
@@ -1257,10 +1245,8 @@ async function exportImage() {
 
 function exportWeb(threeD) {
   if (!fc || !fc.features.length) return alertBox("Nothing to export", "Import data first, then export the map.");
-  const st = S.stats;
-  const share = metric() === "tax" ? st.halfLandTax : st.halfLandValue;
   const title = h("input", { type: "text", value: set.title || metricLabel() });
-  const sub = h("input", { type: "text", value: share > 0 ? "Half of all " + (metric() === "tax" ? "tax revenue" : "property value") + " comes from " + pct(share) + " of the land." : "" });
+  const sub = h("input", { type: "text", value: "" });
   const three = h("input", { type: "checkbox", checked: threeD });
   const big = fc.features.length > 30000 ? h("div", { class: "imp" }, h("div", { class: "msg warn" }, "This layer has " + int(fc.features.length) + " shapes, so the page will be large. Hex or square tiles make a much lighter web page.")) : null;
   const go = h("button", { class: "btn primary" }, "Export…");
