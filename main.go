@@ -102,7 +102,7 @@ func (a *App) menu() *menu.Menu {
 	exp.AddText("CSV Table…", nil, fire("export-csv"))
 	help := m.AddSubmenu("Help")
 	help.AddText("Getting Started", keys.Key("f1"), fire("help"))
-	help.AddText("Strong Towns Website", nil, func(*menu.CallbackData) { wr.BrowserOpenURL(a.ctx, "https://www.strongtowns.org") })
+	help.AddText("STCD Website", nil, func(*menu.CallbackData) { wr.BrowserOpenURL(a.ctx, "https://strongtowns.dev") })
 	help.AddText("Pracre on GitHub", nil, func(*menu.CallbackData) { wr.BrowserOpenURL(a.ctx, "https://github.com/strongtowns/Pracre") })
 	help.AddSeparator()
 	help.AddText("About Pracre", nil, fire("about"))

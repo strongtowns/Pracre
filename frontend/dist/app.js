@@ -1342,7 +1342,7 @@ function showAbout() {
       h("p", { style: "margin:4px 0 10px" }, "Value per acre maps for Strong Towns advocates."),
       h("p", { class: "muted" }, "Free software under the GNU General Public License v3. Base maps © OpenStreetMap contributors, served by OpenFreeMap and the OpenStreetMap Foundation. Map rendering by MapLibre GL JS. Coordinate systems from the EPSG Geodetic Parameter Dataset (© IOGP) and Esri, via PROJ. Sample data: Township of Langley open data (Open Government Licence – Township of Langley)."),
       h("p", {}, h("a", { href: "#", onclick: (e) => { e.preventDefault(); api().OpenURL("https://github.com/strongtowns/Pracre"); } }, "github.com/strongtowns/Pracre"), " · ",
-        h("a", { href: "#", onclick: (e) => { e.preventDefault(); api().OpenURL("https://www.strongtowns.org"); } }, "strongtowns.org"))),
+        h("a", { href: "#", onclick: (e) => { e.preventDefault(); api().OpenURL("https://strongtowns.dev"); } }, "strongtowns.dev"))),
   ], foot: [h("span", { class: "spacer" }), h("button", { class: "btn primary", onclick: () => D.close() }, "OK")] });
 }
 
