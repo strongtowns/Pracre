@@ -17,9 +17,9 @@ The map shows which places pay their way. Tall red columns produce the most tax 
 ## Features
 
 - **Any common format.** CSV, TSV, Excel (.xlsx), GeoJSON, Esri JSON from ArcGIS, zipped or loose Shapefiles, KML and KMZ. Drag files onto the window or use Import Data.
-- **Any location encoding.** Parcel polygons or points, latitude and longitude columns (in either order), "lat, lon" in one column, degrees-minutes-seconds, WKT and GeoJSON geometry columns, or projected X/Y.
-- **Coordinate systems handled.** Read from .prj files, GeoJSON and Esri metadata or EWKT. UTM (WGS 84, NAD83, CSRS, 2011), BC Albers, Conus Albers, Statistics Canada Lambert, Web Mercator and any State Plane or other Transverse Mercator, Lambert or Albers system given as a .prj or WKT. Unlabelled coordinates get a best guess and a mini-map that shows where they land.
-- **Values or tax, either works.** Total value, land plus improvements, one value column per tax class (Residential_Land, Business_Buildings and so on), or the tax amount itself. Add mill rates, percentages or fractions per tax class (or one default rate) to map tax revenue per acre.
+- **Any location encoding.** Parcel polygons or points, latitude and longitude columns (in either order), "lat, lon" in one column, degrees-minutes-seconds, WKT, WKB and GeoJSON geometry columns, MGRS / USNG grid references, UTM text such as "10U 525199 5432031", Plus codes and geohashes, or projected X/Y.
+- **Every coordinate system.** All 7,800 EPSG and ESRI projected systems and 1,400 geographic ones are built in, so a bare code such as EPSG:2264 or an ArcGIS wkid works offline. Systems also come from .prj files (WKT1 or WKT2), GeoJSON and Esri metadata or EWKT. State Plane, UTM, national grids, Krovak, Swiss and Dutch grids, oblique and polar stereographic and the other projection methods parcel data uses all convert to within a centimetre of PROJ. Older datums such as NAD27, OSGB36, ED50 and Tokyo are shifted to WGS 84 with the regional Helmert transformation for where the data sits, usually within a few metres. Unlabelled coordinates are tried in every system near the map view, and the import window shows where they land; "Guess for This Area" ranks the systems again for any place on its map.
+- **Values or tax, either works.** Total value, land plus improvements, one value column per tax class (Residential_Land, Business_Buildings and so on), or the tax amount itself. Add mill rates, percentages or fractions per tax class (or one default rate) to map tax revenue per acre. Exports that repeat every property for several roll years use the latest year.
 - **Automatic linking.** Values in a separate file are joined by the ID both files share (folio, PID, APN, roll number, parcel number), found by comparing the actual values, then by location for anything left over.
 - **Strata and condos handled.** Units stacked on their common property, or drawn as many small shapes at one civic address, are folded into the lot they sit on, so a townhouse complex reads as one productive lot instead of a hundred slivers.
 - **Friendly column mapping.** Every guess is shown in an import window with colour-coded column headings. Change any of them from a drop-down; the map updates as you go.
@@ -69,6 +69,8 @@ Windows may show a SmartScreen notice for a new app; choose More info, then Run 
 Most assessment authorities and municipal open data portals publish parcel boundaries and assessment rolls. Search your city or county's open data site for "parcels", "assessment", "tax roll" or "property". In BC, municipal open data portals and BC Assessment rolls work well; in the United States, county GIS and assessor sites usually offer parcel downloads with assessed values.
 
 The bundled sample covers Walnut Grove, Fort Langley and the farmland between them, from Township of Langley open data (2024 parcels and assessments) under the Open Government Licence - Township of Langley.
+
+Coordinate system parameters come from the EPSG Geodetic Parameter Dataset (© IOGP) and Esri's projection definitions, by way of PROJ's database. To refresh `epsg/epsg.txt.gz` after a PROJ release, run `python epsg/gen.py path/to/proj.db` from the `epsg` folder; `proj.db` ships with PROJ and with the pyproj package.
 
 ## Build from source
 

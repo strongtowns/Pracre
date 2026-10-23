@@ -12,9 +12,11 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/xuri/excelize/v2"
@@ -142,6 +144,9 @@ func readZip(zr *zip.Reader, name string) ([]*Table, error) {
 				continue
 			}
 			t.Name = filepath.Base(base)
+			if strings.EqualFold(t.Name, "doc") {
+				t.Name = name // a KMZ's doc.kml is named after the KMZ
+			}
 			out = append(out, t)
 		}
 	}
@@ -172,8 +177,20 @@ func readZip(zr *zip.Reader, name string) ([]*Table, error) {
 	return out, nil
 }
 
-// toUTF8 decodes Windows-1252/Latin-1 text when the bytes aren't valid UTF-8.
+// toUTF8 decodes UTF-16 with a byte order mark (Excel's "Unicode Text"), and Windows-1252/Latin-1
+// text when the bytes aren't valid UTF-8.
 func toUTF8(b []byte) []byte {
+	if len(b) >= 2 && (b[0] == 0xFF && b[1] == 0xFE || b[0] == 0xFE && b[1] == 0xFF) {
+		var bo binary.ByteOrder = binary.LittleEndian
+		if b[0] == 0xFE {
+			bo = binary.BigEndian
+		}
+		u := make([]uint16, (len(b)-2)/2)
+		for i := range u {
+			u[i] = bo.Uint16(b[2+2*i:])
+		}
+		return []byte(string(utf16.Decode(u)))
+	}
 	b = bytes.TrimPrefix(b, []byte{0xEF, 0xBB, 0xBF})
 	if utf8.Valid(b) {
 		return b
@@ -232,11 +249,75 @@ func readDelimited(b []byte) (*Table, error) {
 	if len(rows) == 0 {
 		return nil, fmt.Errorf("the file is empty")
 	}
+	if best == ';' {
+		decimalCommas(rows)
+	}
 	return tableFromGrid(rows, "csv"), nil
 }
 
+var (
+	reCommaDec = regexp.MustCompile(`^-?\d{1,3}(\.\d{3})*,\d+$|^-?\d+,\d+$`)
+	reDotDec   = regexp.MustCompile(`^-?\d*\.\d+$`)
+	reDotThou  = regexp.MustCompile(`^-?\d{1,3}(\.\d{3})+$`)
+	reInt      = regexp.MustCompile(`^-?\d+$`)
+)
+
+// decimalCommas rewrites "1.234,56" as "1234.56" in the columns of a semicolon-separated file
+// that are written with decimal commas, as French and European locales export them.
+func decimalCommas(rows [][]string) {
+	width := 0
+	for _, r := range rows {
+		width = max(width, len(r))
+	}
+	for c := 0; c < width; c++ {
+		comma, text, filled, dot := 0, 0, 0, false
+		for _, r := range rows {
+			if c >= len(r) || strings.TrimSpace(r[c]) == "" {
+				continue
+			}
+			v := strings.TrimSpace(r[c])
+			filled++
+			switch {
+			case reCommaDec.MatchString(v):
+				comma++
+			case reDotDec.MatchString(v) && !reDotThou.MatchString(v):
+				dot = true // written with decimal points after all
+			case !reInt.MatchString(v) && !reDotThou.MatchString(v):
+				text++
+			}
+		}
+		if dot || comma == 0 || comma*5 < filled || text*3 > filled {
+			continue
+		}
+		for _, r := range rows {
+			if c < len(r) {
+				if v := strings.TrimSpace(r[c]); reCommaDec.MatchString(v) || reDotThou.MatchString(v) {
+					r[c] = strings.Replace(strings.ReplaceAll(v, ".", ""), ",", ".", 1)
+				}
+			}
+		}
+	}
+}
+
 // tableFromGrid splits a header row off a grid; a numeric first row gets generated names.
+// Title and note rows above the header (one or two cells in a wider table) are dropped.
 func tableFromGrid(rows [][]string, format string) *Table {
+	filled := func(r []string) int {
+		n := 0
+		for _, c := range r {
+			if strings.TrimSpace(c) != "" {
+				n++
+			}
+		}
+		return n
+	}
+	wide := 0
+	for _, r := range rows[:min(len(rows), 20)] {
+		wide = max(wide, filled(r))
+	}
+	for len(rows) > 1 && filled(rows[0]) < min(3, wide) {
+		rows = rows[1:]
+	}
 	header := rows[0]
 	numeric := 0
 	for _, h := range header {
@@ -296,19 +377,6 @@ func readXLSX(b []byte) (*Table, error) {
 		if err == nil && len(rows) > len(best) {
 			best = rows
 		}
-	}
-	// Skip title rows above the header: the header is the first row with at least two cells.
-	for len(best) > 0 {
-		n := 0
-		for _, c := range best[0] {
-			if strings.TrimSpace(c) != "" {
-				n++
-			}
-		}
-		if n >= 2 {
-			break
-		}
-		best = best[1:]
 	}
 	if len(best) == 0 {
 		return nil, fmt.Errorf("the workbook has no table")
@@ -413,6 +481,9 @@ func readJSON(b []byte) (*Table, error) {
 		if err := json.Unmarshal(trim, &arr); err != nil {
 			return nil, err
 		}
+		if len(arr) == 0 {
+			return nil, fmt.Errorf("the file has no records")
+		}
 		rs := &recordSet{}
 		for _, r := range arr {
 			rs.add(r)
@@ -439,6 +510,9 @@ func readJSON(b []byte) (*Table, error) {
 	}
 	if doc.Features == nil && strings.EqualFold(doc.Type, "Feature") {
 		doc.Features = []json.RawMessage{trim}
+	}
+	if doc.Features != nil && len(doc.Features) == 0 {
+		return nil, fmt.Errorf("the layer has no features")
 	}
 	if doc.Features != nil {
 		rs := &recordSet{}
@@ -483,6 +557,12 @@ func readJSON(b []byte) (*Table, error) {
 	// A plain object: {code: rate} becomes a two-column table, a wrapper holding one array is unwrapped.
 	var m map[string]json.RawMessage
 	json.Unmarshal(trim, &m)
+	var srvErr struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(m["error"], &srvErr) == nil && srvErr.Message != "" {
+		return nil, fmt.Errorf("the file holds an error from the server it came from: %s", srvErr.Message) // ArcGIS REST
+	}
 	for _, k := range keyOrder(trim) {
 		if v := bytes.TrimSpace(m[k]); len(v) > 0 && v[0] == '[' {
 			return readJSON(v)

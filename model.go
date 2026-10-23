@@ -214,11 +214,21 @@ type Model struct {
 }
 
 type dsCols struct {
-	key, total, land, impr, tax, class, area, unitCol, addr, house, street int
-	wide                                                                   []int
-	wideClass                                                              []string
-	areaUnit                                                               string
-	scores                                                                 map[string]int
+	key, total, land, impr, tax, class, area, unitCol, addr, house, street, year int
+	wide                                                                         []int
+	wideClass                                                                    []string
+	areaUnit                                                                     string
+	scores                                                                       map[string]int
+	latest                                                                       float64
+}
+
+// old reports a row from an earlier roll year than the dataset's latest, which a multi-year export repeats.
+func (c dsCols) old(d *Dataset, r int) bool {
+	if c.year < 0 {
+		return false
+	}
+	y, ok := parseNum(d.T.col(c.year, r))
+	return ok && y < c.latest
 }
 
 func colsOf(d *Dataset) dsCols {
@@ -233,6 +243,13 @@ func colsOf(d *Dataset) dsCols {
 	c.key, c.total, c.land, c.impr, c.tax = idx(RoleKey), idx(RoleTotal), idx(RoleLand), idx(RoleImpr), idx(RoleTax)
 	c.class, c.area, c.unitCol = idx(RoleClass), idx(RoleArea), idx(RoleAreaUnit)
 	c.addr, c.house, c.street = idx(RoleAddress), idx(RoleHouse), idx(RoleStreet)
+	if c.year = idx(RoleYear); c.year >= 0 {
+		for r := range d.T.Rows {
+			if y, ok := parseNum(d.T.col(c.year, r)); ok && y > c.latest {
+				c.latest = y
+			}
+		}
+	}
 	for i, r := range d.Roles {
 		if r.Role == RoleClassVal {
 			c.wide = append(c.wide, i)
@@ -346,13 +363,19 @@ func (m *Model) evalRow(d *Dataset, c dsCols, r int, rb rateBook, classes map[st
 			}
 		}
 	}
+	// Taxable land and buildings beat a market or assessed total in the same row.
+	split := max(c.scores[RoleLand], c.scores[RoleImpr])
+	splitFirst := (hasLand || hasImpr) && split > 8 && split > c.scores[RoleTotal]
 	switch {
-	case hasTotal:
+	case hasTotal && !splitFirst:
 		out.val, out.vScore, out.hasVal = total, c.scores[RoleTotal]+1, true
 	case hasWide:
 		out.val, out.vScore, out.hasVal = wideSum, 9, true
 	case hasLand || hasImpr:
 		out.val, out.vScore, out.hasVal = land+impr, 6, true
+		if splitFirst {
+			out.vScore = split + 1
+		}
 	}
 	cls := ""
 	if c.class >= 0 {
@@ -418,7 +441,7 @@ func buildModel(p *Project) *Model {
 	for r := range prim.T.Rows {
 		rowParcel[r] = -1
 		g := prim.geo[r]
-		if !g.OK {
+		if !g.OK || pc.old(prim, r) {
 			continue
 		}
 		pa := Parcel{G: g, C: labelPoint(g), DS: m.Primary, Row: r}
@@ -471,12 +494,15 @@ func buildModel(p *Project) *Model {
 			}
 			continue
 		}
-		ls := &linkStat{rows: len(d.T.Rows)}
-		links[d.ID] = ls
 		mode := d.Join.Mode
 		if mode == "" {
 			mode = "auto"
 		}
+		if mode == "none" {
+			continue // "Don't link": nothing to report either
+		}
+		ls := &linkStat{rows: len(d.T.Rows), year: int(c.latest), hit: map[int]bool{}}
+		links[d.ID] = ls
 		// Key join.
 		var byKey map[string][]int
 		ki, kj := -1, -1
@@ -506,6 +532,11 @@ func buildModel(p *Project) *Model {
 			grid = newSpatialIndex(m.Parcels)
 		}
 		for r := range d.T.Rows {
+			if c.old(d, r) {
+				ls.empty++ // not counted as a missed link
+				ls.old++
+				continue
+			}
 			v := m.evalRow(d, c, r, rb, classes)
 			if !v.hasVal && !v.hasTax {
 				ls.empty++
@@ -517,6 +548,7 @@ func buildModel(p *Project) *Model {
 					for k, pi := range ps {
 						add(pi, di, v, shares[k])
 						m.Parcels[pi].Links = append(m.Parcels[pi].Links, rowRef{di, r, "key"})
+						ls.hit[pi] = true
 					}
 					ls.byKey++
 					continue
@@ -526,6 +558,7 @@ func buildModel(p *Project) *Model {
 				if pi := grid.find(labelPoint(d.geo[r])); pi >= 0 {
 					add(pi, di, v, 1)
 					m.Parcels[pi].Links = append(m.Parcels[pi].Links, rowRef{di, r, "location"})
+					ls.hit[pi] = true
 					ls.bySpace++
 					continue
 				}
@@ -603,8 +636,9 @@ func buildModel(p *Project) *Model {
 }
 
 type linkStat struct {
-	rows, byKey, bySpace, missed, empty int
-	keyA, keyB                          string
+	rows, byKey, bySpace, missed, empty, old, year int
+	hit                                            map[int]bool // parcels that got a record
+	keyA, keyB                                     string
 }
 
 func colIndex(t *Table, name string) int {
@@ -889,10 +923,13 @@ func (m *Model) checklist(p *Project, rb rateBook, links map[string]*linkStat) [
 	st := m.Stats
 	val := Check{ID: "values", Title: "Property values", Status: "todo", Action: "import", Label: "Import",
 		Detail: "Import assessed values or tax amounts per property (CSV, Excel, or columns in the parcel file)."}
-	anyValues := false
+	anyValues, valuesID := false, ""
 	for _, d := range p.Datasets {
 		if d.hasValues() {
 			anyValues = true
+			if valuesID == "" {
+				valuesID = d.ID
+			}
 		}
 	}
 	switch {
@@ -907,6 +944,9 @@ func (m *Model) checklist(p *Project, rb rateBook, links map[string]*linkStat) [
 		val = Check{ID: "values", Title: "Property values", Status: "done", Detail: upperFirst(strings.Join(parts, ", ")) + "."}
 	case anyValues && m.Primary < 0:
 		val = Check{ID: "values", Title: "Property values", Status: "done", Detail: "Values are loaded and waiting for parcel locations."}
+	case anyValues:
+		val = Check{ID: "values", Title: "Property values", Status: "todo", Action: "dataset:" + valuesID, Label: "Link",
+			Detail: "Values are loaded but none reached a parcel. Check how the values file links to the parcels."}
 	}
 	out = append(out, val)
 
@@ -935,9 +975,17 @@ func (m *Model) checklist(p *Project, rb rateBook, links map[string]*linkStat) [
 			c.Detail += ": " + strings.Join(how, ", ")
 		}
 		c.Detail += "."
+		if ls.old > 0 {
+			c.Detail += fmt.Sprintf(" Only %d values are used; %s from earlier years are left out.", ls.year, plural(ls.old, "row", "rows"))
+		}
+		cover := float64(len(ls.hit)) / float64(max(len(m.Parcels), 1))
 		switch {
 		case rate >= 0.9:
 			c.Status = "done"
+		case cover >= 0.9:
+			// A county-wide roll against a city's parcels: the link is fine, the file is just bigger.
+			c.Status = "done"
+			c.Detail += fmt.Sprintf(" The other records are outside the parcel layer, which has %.0f%% of its parcels linked.", cover*100)
 		case rate >= 0.5:
 			c.Status = "warn"
 			c.Detail += " Check the ID columns if this seems low."
@@ -971,8 +1019,12 @@ func (m *Model) checklist(p *Project, rb rateBook, links map[string]*linkStat) [
 		rates.Status, rates.Detail = "warn", plural(unrated, "tax class still needs", "tax classes still need")+" a rate."
 	case len(m.Classes) > 0:
 		rates.Status, rates.Detail = "optional", "Add rates for the "+plural(len(m.Classes), "tax class", "tax classes")+" to map tax revenue per acre."
-	case rb.anyRate:
+	case rb.def != nil:
 		rates.Status, rates.Detail = "done", "One rate applies to every property."
+	case rb.anyRate && st.HasValue:
+		rates.Status, rates.Detail = "warn", "No column gives each property a tax class to match these rates. Pick the tax class column in the import window, or add a default rate."
+	case rb.anyRate:
+		rates.Status, rates.Detail = "done", "Rates are ready for the tax classes in your values."
 	default:
 		rates.Status, rates.Detail = "optional", "Add your mill rate (or one per tax class) to map tax revenue per acre."
 	}

@@ -205,8 +205,18 @@ func (a *App) Import(paths []string, hintLon, hintLat float64) ImportResult {
 		hint = Pt{(b[0] + b[2]) / 2, (b[1] + b[3]) / 2}
 	}
 	var res ImportResult
+	stem := func(p string) string { return strings.ToLower(strings.TrimSuffix(p, filepath.Ext(p))) }
+	shps := map[string]bool{}
 	for _, p := range paths {
-		if strings.EqualFold(filepath.Ext(p), ".prj") || strings.EqualFold(filepath.Ext(p), ".cpg") || strings.EqualFold(filepath.Ext(p), ".shx") {
+		if strings.EqualFold(filepath.Ext(p), ".shp") {
+			shps[stem(p)] = true
+		}
+	}
+	for _, p := range paths {
+		// A shapefile's other parts are read with its .shp (a .dbf alone is a table), and its
+		// index and metadata files (.sbn, .shp.xml) aren't data.
+		ext := strings.ToLower(filepath.Ext(p))
+		if sidecars[ext] || ext == ".dbf" && shps[stem(p)] || ext == ".xml" && filepath.Ext(stem(p)) != "" {
 			continue
 		}
 		tabs, err := readFile(p)
@@ -225,6 +235,8 @@ func (a *App) Import(paths []string, hintLon, hintLat float64) ImportResult {
 	a.invalidate()
 	return res
 }
+
+var sidecars = map[string]bool{".prj": true, ".cpg": true, ".shx": true, ".sbn": true, ".sbx": true, ".qix": true, ".fix": true, ".qmd": true, ".atx": true, ".aih": true, ".ain": true, ".lyr": true, ".lyrx": true}
 
 // addTable adds one table; a tax rate table goes straight into the rates list instead.
 func (a *App) addTable(t *Table, path string, hint Pt) (string, int) {
@@ -273,8 +285,16 @@ func (a *App) mergeRates(d *Dataset) int {
 		}
 		n++
 	}
-	if n > 0 && small {
-		a.proj.RateUnit = "fraction"
+	if n > 0 {
+		// The rate column's heading says the unit when it can; otherwise rates under 0.1 are fractions.
+		switch h := strings.ToLower(d.T.Cols[ri]); {
+		case strings.Contains(h, "%") || strings.Contains(h, "percent") || strings.Contains(h, "pct"):
+			a.proj.RateUnit = "percent"
+		case strings.Contains(h, "mill") || strings.Contains(h, "1000") || strings.Contains(h, "1,000"):
+			a.proj.RateUnit = "mill"
+		case small:
+			a.proj.RateUnit = "fraction"
+		}
 	}
 	return n
 }
@@ -302,6 +322,22 @@ func (a *App) Configure(id string, roles []ColRole, crsText string, join Join) (
 		a.invalidate()
 		return DatasetDTO{ID: id, Kind: "rates"}, nil
 	}
+	d.prepare(d.Hint)
+	a.invalidate()
+	a.ensureModel()
+	return a.dto(d, 60), nil
+}
+
+// GuessNear ranks the coordinate system guesses again for data near lon/lat, the import window's
+// small map view: unlabelled State Plane feet fit dozens of states until Pracre knows the area.
+func (a *App) GuessNear(id string, lon, lat float64) (DatasetDTO, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	d := a.proj.dataset(id)
+	if d == nil {
+		return DatasetDTO{}, fmt.Errorf("no dataset %s", id)
+	}
+	d.Hint, d.CRSText = Pt{lon, lat}, ""
 	d.prepare(d.Hint)
 	a.invalidate()
 	a.ensureModel()
@@ -614,7 +650,10 @@ func (a *App) ExportCSV() (string, error) {
 }
 
 func csvQ(s string) string {
-	if strings.ContainsAny(s, ",\"\n") {
+	if s != "" && strings.ContainsRune("=+@", rune(s[0])) {
+		s = "'" + s // imported text must not run as a spreadsheet formula
+	}
+	if strings.ContainsAny(s, ",\"\n\r") {
 		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 	}
 	return s

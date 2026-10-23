@@ -32,15 +32,15 @@ const DEFAULTS = {
 };
 const ROLE_GROUPS = [
   ["", [["", "Not used"]]],
-  ["Location", [["lat", "Latitude"], ["lon", "Longitude"], ["x", "X / Easting"], ["y", "Y / Northing"], ["latlon", "Lat, Lon in one column"], ["geom", "Shape (WKT or GeoJSON)"]]],
+  ["Location", [["lat", "Latitude"], ["lon", "Longitude"], ["x", "X / Easting"], ["y", "Y / Northing"], ["latlon", "Lat, Lon in one column"], ["gridref", "Grid reference (MGRS, USNG, UTM, Plus code)"], ["geom", "Shape (WKT, WKB or GeoJSON)"]]],
   ["Linking", [["key", "Parcel ID"]]],
-  ["Values", [["total", "Total value"], ["land", "Land value"], ["impr", "Improvement value"], ["classvalue", "Value for one tax class"], ["tax", "Tax amount"], ["class", "Tax class or code"]]],
+  ["Values", [["total", "Total value"], ["land", "Land value"], ["impr", "Improvement value"], ["classvalue", "Value for one tax class"], ["tax", "Tax amount"], ["class", "Tax class or code"], ["year", "Roll year (latest kept)"]]],
   ["Lot", [["area", "Lot area"], ["areaunit", "Lot area unit"]]],
   ["Label", [["address", "Address"], ["house", "House number"], ["street", "Street name"]]],
   ["Tax rates table", [["ratecode", "Rate code"], ["rate", "Rate"], ["ratedesc", "Rate description"]]],
 ];
-const ROLE_KIND = { lat: "loc", lon: "loc", x: "loc", y: "loc", latlon: "loc", geom: "loc", key: "id", total: "val", land: "val", impr: "val",
-  classvalue: "val", tax: "val", class: "cls", area: "lot", areaunit: "lot", address: "addr", house: "addr", street: "addr", ratecode: "rate", rate: "rate", ratedesc: "rate" };
+const ROLE_KIND = { lat: "loc", lon: "loc", x: "loc", y: "loc", latlon: "loc", gridref: "loc", geom: "loc", key: "id", total: "val", land: "val", impr: "val",
+  classvalue: "val", tax: "val", class: "cls", year: "cls", area: "lot", areaunit: "lot", address: "addr", house: "addr", street: "addr", ratecode: "rate", rate: "rate", ratedesc: "rate" };
 const SINGULAR = new Set(Object.keys(ROLE_KIND).filter((r) => r !== "classvalue"));
 
 // ---------------------------------------------------------------- state
@@ -119,12 +119,13 @@ const colors = () => rampColors(set.ramp, classCount());
 // ---------------------------------------------------------------- status
 
 let busyCount = 0;
+let busyMsg = "";
 function busy(on, msg) {
   busyCount = Math.max(0, busyCount + (on ? 1 : -1));
   $("#stBusy").classList.toggle("hidden", busyCount === 0);
   document.body.style.cursor = busyCount ? "progress" : "";
-  if (msg) status(msg);
-  else if (!busyCount) status("Ready");
+  if (msg) status((busyMsg = msg));
+  else if (!busyCount && $("#stMsg").textContent === busyMsg) status("Ready"); // keep a result such as "Opened …" set meanwhile
 }
 function status(msg) {
   $("#stMsg").textContent = msg;
@@ -238,9 +239,14 @@ function applyView(animate = true) {
   vis("vpa-line", !three);
   vis("vpa-3d", three);
   vis("vpa-sel-3d", three);
+  syncToolbar();
+  if (map.isMoving()) {
+    // Tilting now would cut short a zoom to the data that is still flying; tilt once it lands.
+    map.once("moveend", () => applyView(animate));
+    return;
+  }
   const want = three ? Math.max(map.getPitch(), 55) : 0;
   if (Math.abs(map.getPitch() - want) > 1) map.easeTo({ pitch: want, bearing: three && Math.abs(map.getBearing()) < 1 ? -17 : three ? map.getBearing() : 0, duration: animate ? 900 : 0 });
-  syncToolbar();
 }
 
 function hover(e) {
@@ -377,8 +383,15 @@ async function refresh(fitAfter) {
   $("#app").classList.toggle("nobottom", S.datasets.length === 0);
   if (map) map.resize();
   await loadLayer();
-  if (has && (fitAfter || !hadData)) fit(hadData);
+  if (has && (fitAfter || !hadData || offscreen())) fit(hadData);
   hadData = has;
+}
+
+// offscreen is true when the data's centre is outside the view, as after picking another coordinate system.
+function offscreen() {
+  const b = S.stats.bbox;
+  const v = map.getBounds && map.getBounds();
+  return !!v && !v.contains([(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]);
 }
 
 function renderChecklist() {
@@ -425,11 +438,11 @@ function renderStats() {
   } else {
     ins.classList.remove("hidden");
     ins.innerHTML = "";
-    ins.append(h("div", { class: "ihead" }, set.title || "Value per acre"));
+    ins.append(h("div", { class: "ihead" }, set.title || metricLabel()));
     const body = h("div", { class: "ibody" });
     if (share > 0) body.append(h("div", { class: "ibig", html: "Half of all " + (m === "tax" ? "tax revenue" : "property value") + " comes from <b>" + pct(share) + "</b> of the land." }));
     const total = m === "tax" ? st.totalTax : st.totalValue;
-    body.append(h("div", { class: "imeta" }, (m === "tax" ? "Tax " : "Value ") + money(total) + " · " + int(st.totalAcres) + " acres · " + int(st.parcels) + " parcels"));
+    body.append(h("div", { class: "imeta" }, (m === "tax" ? "Tax " : "Value ") + money(total) + " · " + (st.totalAcres ? int(st.totalAcres) + " acres · " : "") + int(st.parcels) + " parcels"));
     ins.append(body);
   }
   $("#stParcels").textContent = st.parcels ? int(st.parcels) + " parcels" : "";
@@ -439,13 +452,13 @@ function renderStats() {
 
 function renderLegend() {
   const lg = $("#legend");
-  if (!meta || !meta.breaks || meta.breaks.length < 2 || !fc.features.length) {
+  if (!meta || !fc.features.length) {
     lg.classList.add("hidden");
     return;
   }
   lg.classList.remove("hidden");
   const cols = colors();
-  const b = meta.breaks;
+  const b = meta.breaks || []; // points without lot areas have no classes, only the grey rows below
   lg.innerHTML = "";
   lg.append(h("b", {}, metricLabel()));
   for (let i = b.length - 2; i >= 0; i--) {
@@ -465,7 +478,7 @@ function renderLegend() {
 
 function legendItems() {
   const cols = colors();
-  const b = meta.breaks;
+  const b = (meta && meta.breaks) || []; // none when no feature has a lot area
   const out = [];
   for (let i = 0; i < b.length - 1; i++) out.push({ color: cols[i], label: i === b.length - 2 ? money(b[i]) + " and up" : money(b[i]) + " – " + money(b[i + 1]) });
   return out;
@@ -475,7 +488,7 @@ function legendItems() {
 let ratesTimer = 0;
 function renderRates() {
   const tb = $("#ratesGrid tbody");
-  if (document.activeElement && tb.contains(document.activeElement)) return; // don't fight the typist
+  if (typingRates()) return; // don't fight the typist
   tb.innerHTML = "";
   const classes = new Map((S.classes || []).map((c) => [normKey(c.code), c]));
   S.rates.forEach((r, i) => {
@@ -493,17 +506,30 @@ function renderRates() {
   $("#selRateUnit").value = S.rateUnit || "mill";
   $("#levy").textContent = S.stats.hasTax ? "Total tax: " + money(S.stats.totalTax) : "";
 }
+// typingRates is true while a rates cell has the cursor (a clicked delete button doesn't count).
+function typingRates() {
+  const a = document.activeElement;
+  return !!a && a.tagName === "INPUT" && !!a.closest("#ratesGrid");
+}
 function normKey(s) {
   return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^0+(?=.)/, "");
 }
 function pushRates(now) {
   clearTimeout(ratesTimer);
   ratesTimer = setTimeout(async () => {
-    S = await api().SetRates(S.rates, $("#selRateUnit").value);
+    const local = S.rates;
+    const sent = JSON.stringify(local);
+    const res = await api().SetRates(local, $("#selRateUnit").value);
+    S = res;
+    if (JSON.stringify(local) !== sent) {
+      // Edited while the save was on its way: keep those edits and save them too.
+      S.rates = local;
+      pushRates(false);
+    }
     renderChecklist();
     renderStats();
     syncControls();
-    if (!document.activeElement || !$("#ratesGrid").contains(document.activeElement)) renderRates();
+    if (!typingRates()) renderRates();
     else $("#levy").textContent = S.stats.hasTax ? "Total tax: " + money(S.stats.totalTax) : "";
     await loadLayer();
   }, now ? 0 : 500);
@@ -610,8 +636,10 @@ function change(patch, data) {
   syncControls();
   saveSettings();
   if (baseChanged) map.setStyle(styleFor(set.basemap));
-  if (data) loadLayer();
-  else {
+  if (data) {
+    loadLayer();
+    renderStats(); // the insight card names the measure and its total
+  } else {
     applyPaint();
     renderLegend();
     renderStats();
@@ -653,19 +681,23 @@ function initControls() {
   $("#txtTitle").oninput = (e) => change({ title: e.target.value });
   $("#selClear").onclick = () => select(null);
 
-  $("#selRateUnit").onchange = () => pushRates(true);
+  $("#selRateUnit").onchange = () => {
+    S.rateUnit = $("#selRateUnit").value; // a redraw before the save returns must not put back the old unit
+    pushRates(true);
+  };
   $("#ratesGrid").addEventListener("input", (e) => {
     const el = e.target;
     const i = Number(el.dataset.i);
     if (!el.dataset.k || !S.rates[i]) return;
     if (el.dataset.k === "rate") {
-      const v = parseFloat(el.value.replace(/[^0-9.\-]/g, ""));
+      const raw = el.value.includes(".") ? el.value : el.value.replace(",", "."); // "2,05" is a decimal comma
+      const v = parseFloat(raw.replace(/[^0-9.\-]/g, ""));
       S.rates[i].rate = Number.isFinite(v) ? v : null;
     } else S.rates[i][el.dataset.k] = el.value;
     pushRates(false);
   });
   $("#ratesGrid").addEventListener("focusout", () => setTimeout(() => {
-    if (!$("#ratesGrid").contains(document.activeElement)) renderRates();
+    if (!typingRates()) renderRates();
   }, 600));
   $("#btnAddRate").onclick = () => {
     S.rates.push({ code: "New class", desc: "", rate: null });
@@ -788,7 +820,8 @@ async function afterOpen() {
   S = await api().State();
   let s = {};
   try {
-    s = S.settings ? JSON.parse(S.settings) : {};
+    // Go sends the saved settings as a JSON object; older builds may have sent the text.
+    s = typeof S.settings === "string" ? JSON.parse(S.settings) : { ...(S.settings || {}) };
   } catch (e) {}
   const cam = s.camera;
   delete s.camera;
@@ -828,7 +861,8 @@ async function importPaths(paths) {
     }, "Opening project…");
     return;
   }
-  const c = map.getCenter();
+  // The map centre hints where unlabelled coordinates belong, once someone has zoomed to their town.
+  const c = map.getZoom() >= 5 ? map.getCenter() : { lng: 0, lat: 0 };
   busy(true, "Reading " + paths.map((p) => p.split(/[\\/]/).pop()).join(", ") + "…");
   let res;
   try {
@@ -909,10 +943,12 @@ function confirmBox(title, msg, yes = "OK") {
 
 async function openDataset(id, fresh) {
   let d = await api().Dataset(id);
+  const name = d.name;
   const crsList = await api().CommonCRS();
   const orig = { roles: JSON.parse(JSON.stringify(d.roles)), crs: d.crsText, join: { ...d.join } };
   let roles = JSON.parse(JSON.stringify(d.roles));
   let mini = null;
+  const miniBox = h("div", { class: "mini" }); // kept across redraws so the small map isn't rebuilt each time
 
   const summary = h("div", { class: "summary" });
   const gridWrap = h("div", { class: "gridwrap" });
@@ -933,6 +969,12 @@ async function openDataset(id, fresh) {
       alertBox("Couldn't apply that", String(e));
     } finally {
       busy(false);
+    }
+    if (d.kind === "rates") {
+      // Marked as a rates table: its rows are now in the Tax Rates table and the dataset is gone.
+      D.close("rates");
+      status("Read " + name + " as a tax rates table");
+      return;
     }
     draw();
   }
@@ -1004,8 +1046,7 @@ async function openDataset(id, fresh) {
     side.innerHTML = "";
     if (d.hasLoc) {
       const fs = h("fieldset", {}, h("legend", {}, "Where is it?"));
-      const box = h("div", { class: "mini" });
-      fs.append(box);
+      fs.append(miniBox);
       const sel = h("select", {});
       sel.append(h("option", { value: "" }, "Automatic: " + (d.crs.name || "unknown")));
       const g1 = h("optgroup", { label: "Suggested" });
@@ -1029,18 +1070,32 @@ async function openDataset(id, fresh) {
           custom.focus();
           return;
         }
-        d.crsText = sel.value.replace("#swap", "");
+        d.crsText = sel.value;
         apply();
       };
       applyCustom.onclick = () => { d.crsText = custom.value.trim(); apply(); };
       fs.append(h("label", { class: "row", style: "display:block" }, "Coordinate system"), sel, custom, applyCustom);
+      const near = h("button", { class: "btn", style: "margin-top:4px", title: "Move the small map to where the data belongs, then rank the systems that fit there" }, "Guess for This Area");
+      near.onclick = async () => {
+        if (!mini) return;
+        const c = mini.getCenter();
+        busy(true, "Finding systems that fit here…");
+        try {
+          d = await api().GuessNear(id, c.lng, c.lat);
+          S = await api().State();
+        } finally {
+          busy(false);
+        }
+        draw();
+      };
       let msg;
       if (d.locErr) msg = h("div", { class: "msg err" }, d.locErr);
-      else if (!d.crsSure) msg = h("div", { class: "msg warn" }, "Pracre guessed this. Check that the orange dots land in the right town; if not, pick another system.");
-      else msg = h("div", { class: "msg ok" }, "✓ " + int(d.located) + " of " + int(d.rows) + " rows located" + (d.fileCrs ? " (system read from the file)" : ""));
+      else if (!d.crsSure) msg = h("div", { class: "msg warn" }, "Pracre guessed this. Check that the orange dots land in the right town; if not, move the small map to your town and click Guess for This Area, or pick another system.");
+      else msg = h("div", { class: "msg ok" }, "✓ " + int(d.located) + " of " + int(d.rows) + " rows located" + (d.fileCrs && !d.crsText ? " (system read from the file)" : ""));
+      if (!d.crsSure && !d.fileCrs) fs.append(near);
       fs.append(msg);
       side.append(fs);
-      requestAnimationFrame(() => drawMini(box));
+      requestAnimationFrame(drawMini);
     }
     // side: linking
     const primary = S.datasets.find((x) => x.primary);
@@ -1070,14 +1125,24 @@ async function openDataset(id, fresh) {
     side.append(key2);
   }
 
-  async function drawMini(box) {
-    if (!box.isConnected) return;
-    if (mini) mini.remove();
-    mini = new maplibregl.Map({ container: box, style: styleFor(set.basemap === "none" ? "light" : set.basemap), attributionControl: false, center: [-98, 44], zoom: 2 });
+  function drawMini() {
+    if (!miniBox.isConnected) return;
+    const url = () => "/api/locations?id=" + id + "&t=" + Date.now();
+    const fit = () => d.bbox && mini.fitBounds([[d.bbox[0], d.bbox[1]], [d.bbox[2], d.bbox[3]]], { padding: 20, duration: 0, maxZoom: 15 });
+    if (mini) {
+      mini.resize();
+      if (mini.getSource("pts")) {
+        mini.getSource("pts").setData(url());
+        fit();
+      }
+      return;
+    }
+    mini = new maplibregl.Map({ container: miniBox, style: styleFor(set.basemap === "none" ? "light" : set.basemap), attributionControl: false, center: [-98, 44], zoom: 2 });
+    mini.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right"); // zoom out to find the right town
     mini.on("load", () => {
-      mini.addSource("pts", { type: "geojson", data: "/api/locations?id=" + id + "&t=" + Date.now() });
+      mini.addSource("pts", { type: "geojson", data: url() });
       mini.addLayer({ id: "pts", type: "circle", source: "pts", paint: { "circle-radius": 2.5, "circle-color": "#f26522", "circle-stroke-color": "#fff", "circle-stroke-width": 0.5 } });
-      if (d.bbox) mini.fitBounds([[d.bbox[0], d.bbox[1]], [d.bbox[2], d.bbox[3]]], { padding: 20, duration: 0, maxZoom: 15 });
+      fit();
     });
   }
 
@@ -1113,7 +1178,7 @@ function composeImage() {
   const W = src.clientWidth, H = src.clientHeight;
   const font = (w, s) => (g.font = w + " " + s + "px " + getComputedStyle(document.body).fontFamily);
   // title card
-  const title = set.title || "Value per acre";
+  const title = set.title || metricLabel();
   const st = S.stats;
   const share = metric() === "tax" ? st.halfLandTax : st.halfLandValue;
   const sub = share > 0 ? "Half of all " + (metric() === "tax" ? "tax revenue" : "property value") + " comes from " + pct(share) + " of the land." : "";
@@ -1182,7 +1247,7 @@ function exportWeb(threeD) {
   if (!fc || !fc.features.length) return alertBox("Nothing to export", "Import data first, then export the map.");
   const st = S.stats;
   const share = metric() === "tax" ? st.halfLandTax : st.halfLandValue;
-  const title = h("input", { type: "text", value: set.title || "Value per acre" });
+  const title = h("input", { type: "text", value: set.title || metricLabel() });
   const sub = h("input", { type: "text", value: share > 0 ? "Half of all " + (metric() === "tax" ? "tax revenue" : "property value") + " comes from " + pct(share) + " of the land." : "" });
   const three = h("input", { type: "checkbox", checked: threeD });
   const big = fc.features.length > 30000 ? h("div", { class: "imp" }, h("div", { class: "msg warn" }, "This layer has " + int(fc.features.length) + " shapes, so the page will be large. Hex or square tiles make a much lighter web page.")) : null;
@@ -1275,7 +1340,7 @@ function showAbout() {
     h("div", { style: "padding:12px 4px 0" },
       h("h1", {}, "Pracre ", h("small", { class: "muted", style: "font-size:13px" }, S && S.version)),
       h("p", { style: "margin:4px 0 10px" }, "Value per acre maps for Strong Towns advocates."),
-      h("p", { class: "muted" }, "Free software under the GNU General Public License v3. Base maps © OpenStreetMap contributors, served by OpenFreeMap and the OpenStreetMap Foundation. Map rendering by MapLibre GL JS. Sample data: Township of Langley open data (Open Government Licence – Township of Langley)."),
+      h("p", { class: "muted" }, "Free software under the GNU General Public License v3. Base maps © OpenStreetMap contributors, served by OpenFreeMap and the OpenStreetMap Foundation. Map rendering by MapLibre GL JS. Coordinate systems from the EPSG Geodetic Parameter Dataset (© IOGP) and Esri, via PROJ. Sample data: Township of Langley open data (Open Government Licence – Township of Langley)."),
       h("p", {}, h("a", { href: "#", onclick: (e) => { e.preventDefault(); api().OpenURL("https://github.com/strongtowns/Pracre"); } }, "github.com/strongtowns/Pracre"), " · ",
         h("a", { href: "#", onclick: (e) => { e.preventDefault(); api().OpenURL("https://www.strongtowns.org"); } }, "strongtowns.org"))),
   ], foot: [h("span", { class: "spacer" }), h("button", { class: "btn primary", onclick: () => D.close() }, "OK")] });

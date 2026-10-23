@@ -3,3 +3,4 @@
 *.ico binary
 *.zip binary
 *.blend binary
+*.gz binary

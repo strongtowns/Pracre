@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"math"
 	"sort"
@@ -293,6 +295,7 @@ type gjGeom struct {
 	Type        string          `json:"type"`
 	Coordinates json.RawMessage `json:"coordinates"`
 	Geometries  []gjGeom        `json:"geometries"`
+	Geometry    *gjGeom         `json:"geometry"` // a whole Feature, as Opendatasoft JSON exports nest it
 }
 
 func parseGeoJSONGeom(raw []byte) Geom {
@@ -308,6 +311,10 @@ func parseGeoJSONGeom(raw []byte) Geom {
 
 func (g gjGeom) toGeom() Geom {
 	switch strings.ToLower(g.Type) {
+	case "feature":
+		if g.Geometry != nil {
+			return g.Geometry.toGeom()
+		}
 	case "point":
 		var c []float64
 		if json.Unmarshal(g.Coordinates, &c) == nil && len(c) >= 2 {
@@ -411,6 +418,100 @@ func parseWKT(s string) (Geom, int) {
 			}
 		}
 		return polyGeom(ps), srid
+	}
+	return Geom{}, srid
+}
+
+// parseHexWKB reads hex WKB or PostGIS EWKB (points and polygons, with optional Z/M and SRID); lines are skipped.
+func parseHexWKB(s string) (Geom, int) {
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return Geom{}, 0
+	}
+	var polys []Poly
+	var pts []Pt
+	srid, p, bad := 0, 0, false
+	var read func(depth int)
+	read = func(depth int) {
+		if p+5 > len(b) || depth > 4 {
+			bad = true
+			return
+		}
+		var bo binary.ByteOrder = binary.LittleEndian
+		if b[p] == 0 {
+			bo = binary.BigEndian
+		}
+		p++
+		u32 := func() int {
+			if p+4 > len(b) {
+				bad = true
+				return 0
+			}
+			p += 4
+			return int(bo.Uint32(b[p-4:]))
+		}
+		typ := u32()
+		dims := 2
+		if typ&0x80000000 != 0 {
+			dims++
+		}
+		if typ&0x40000000 != 0 {
+			dims++
+		}
+		if typ&0x20000000 != 0 {
+			srid = u32()
+		}
+		typ &= 0x0fffffff
+		switch typ / 1000 { // ISO WKB: 1001 Z, 2001 M, 3001 ZM
+		case 1, 2:
+			dims = 3
+		case 3:
+			dims = 4
+		}
+		coords := func(n int) Ring {
+			if bad || n*8*dims > len(b)-p {
+				bad = true
+				return nil
+			}
+			r := make(Ring, n)
+			for i := range r {
+				r[i] = Pt{math.Float64frombits(bo.Uint64(b[p:])), math.Float64frombits(bo.Uint64(b[p+8:]))}
+				p += 8 * dims
+			}
+			return r
+		}
+		ring := func() Ring { return coords(u32()) }
+		switch typ % 1000 {
+		case 1:
+			if r := coords(1); len(r) == 1 {
+				pts = append(pts, r[0])
+			}
+		case 2:
+			ring()
+		case 3:
+			var poly Poly
+			for n := u32(); n > 0 && !bad; n-- {
+				if r := ring(); len(r) >= 3 {
+					poly = append(poly, r)
+				}
+			}
+			if len(poly) > 0 {
+				polys = append(polys, poly)
+			}
+		case 4, 5, 6, 7:
+			for n := u32(); n > 0 && !bad; n-- {
+				read(depth + 1)
+			}
+		default:
+			bad = true
+		}
+	}
+	read(0)
+	switch {
+	case len(polys) > 0:
+		return polyGeom(polys), srid
+	case len(pts) > 0 && !bad:
+		return pointGeom(pts[0][0], pts[0][1]), srid
 	}
 	return Geom{}, srid
 }
