@@ -65,8 +65,7 @@ input, select, textarea, button { font: inherit; color: inherit; }
 .tspacer { flex: 1; }
 .brand { display: flex; align-items: center; gap: 8px; padding: 0 10px 0 12px; margin: 2px 0 5px; border-left: 1px solid var(--shadow); box-shadow: inset 1px 0 0 var(--hi); }
 .brand img { width: 40px; height: 40px; }
-.brand b { display: block; font-size: 19px; letter-spacing: .01em; color: var(--navy); line-height: 1; }
-.brand span { display: block; font-size: 11px; color: var(--orange); font-weight: 600; text-transform: uppercase; letter-spacing: .08em; margin-top: 2px; }
+.brand b { display: block; font-size: 19px; letter-spacing: .01em; color: var(--navy); line-height: 1; margin-bottom: 3px; /* lifts the glyphs to the logo's centre */ }
 
 /* ---- docks and panels ---- */
 .dock { display: flex; flex-direction: column; gap: 4px; padding: 4px; min-height: 0; overflow: hidden; }

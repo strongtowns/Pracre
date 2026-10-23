@@ -419,6 +419,32 @@ func TestMultiYearStrata(t *testing.T) {
 	}
 }
 
+// TestBundledSamples loads each sample the File menu offers and expects a finished checklist.
+func TestBundledSamples(t *testing.T) {
+	for name, at := range samplePlaces {
+		tabs, err := readFile("sample/" + name + "-sample.zip")
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := &Project{}
+		for _, tb := range tabs {
+			if d := (&Dataset{T: tb, Geoms: tb.Geoms, Roles: detectRoles(tb)}); !d.isRates() {
+				d.prepare(at)
+				p.Datasets = append(p.Datasets, d)
+			}
+		}
+		m := buildModel(p)
+		if m.Stats.WithValue < 7000 {
+			t.Errorf("%s: values on %d parcels", name, m.Stats.WithValue)
+		}
+		for _, c := range m.Checks {
+			if c.Status == "todo" || c.Status == "warn" {
+				t.Errorf("%s: [%s] %s: %s", name, c.Status, c.Title, c.Detail)
+			}
+		}
+	}
+}
+
 // TestCommonPropertyHoles merges strata units drawn in holes of their common property, and leaves
 // lots in holes of a road or an assessed parcel alone.
 func TestCommonPropertyHoles(t *testing.T) {

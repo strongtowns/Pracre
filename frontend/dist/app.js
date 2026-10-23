@@ -766,13 +766,8 @@ const ACTIONS = {
     const paths = await api().ChooseFiles();
     if (paths && paths.length) await importPaths(paths);
   }),
-  sample: () => guard(async () => {
-    const res = await api().LoadSample();
-    if (res.errors && res.errors.length) alertBox("Sample data", res.errors.join("\n"));
-    if (!set.title) set.title = "Township of Langley, value per acre";
-    await refresh(true);
-    status("Loaded the Township of Langley sample: Walnut Grove, Fort Langley and the farmland between");
-  }, "Loading the Langley sample…"),
+  sample: () => loadSample("langley", "Township of Langley", "Loaded the Township of Langley sample: Walnut Grove, Fort Langley and the farmland between"),
+  "sample-porthuron": () => loadSample("port-huron", "Port Huron", "Loaded the Port Huron, Michigan sample: every parcel in the city, with 2024 taxable values"),
   rates: () => {
     $("#app").classList.remove("nobottom");
     const first = $("#ratesGrid td.unrated input") || $("#ratesGrid input");
@@ -834,6 +829,16 @@ async function afterOpen() {
   if (cam) map.jumpTo(cam);
   applyView(false);
   status("Opened " + (S.project || "project"));
+}
+
+function loadSample(name, place, done) {
+  return guard(async () => {
+    const res = await api().LoadSample(name);
+    if (res.errors && res.errors.length) alertBox("Sample data", res.errors.join("\n"));
+    if (!set.title) set.title = place + ", value per acre";
+    await refresh(true);
+    status(done);
+  }, "Loading the " + place + " sample…");
 }
 
 async function saveProject(as) {
@@ -1340,7 +1345,7 @@ function showAbout() {
     h("div", { style: "padding:12px 4px 0" },
       h("h1", {}, "Pracre ", h("small", { class: "muted", style: "font-size:13px" }, S && S.version)),
       h("p", { style: "margin:4px 0 10px" }, "Value per acre maps for Strong Towns advocates."),
-      h("p", { class: "muted" }, "Free software under the GNU General Public License v3. Base maps © OpenStreetMap contributors, served by OpenFreeMap and the OpenStreetMap Foundation. Map rendering by MapLibre GL JS. Coordinate systems from the EPSG Geodetic Parameter Dataset (© IOGP) and Esri, via PROJ. Sample data: Township of Langley open data (Open Government Licence – Township of Langley)."),
+      h("p", { class: "muted" }, "Free software under the GNU General Public License v3. Base maps © OpenStreetMap contributors, served by OpenFreeMap and the OpenStreetMap Foundation. Map rendering by MapLibre GL JS. Coordinate systems from the EPSG Geodetic Parameter Dataset (© IOGP) and Esri, via PROJ. Sample data: Township of Langley open data (Open Government Licence – Township of Langley) and City of Port Huron, Michigan parcel data."),
       h("p", {}, h("a", { href: "#", onclick: (e) => { e.preventDefault(); api().OpenURL("https://github.com/strongtowns/Pracre"); } }, "github.com/strongtowns/Pracre"), " · ",
         h("a", { href: "#", onclick: (e) => { e.preventDefault(); api().OpenURL("https://strongtowns.dev"); } }, "strongtowns.dev"))),
   ], foot: [h("span", { class: "spacer" }), h("button", { class: "btn primary", onclick: () => D.close() }, "OK")] });

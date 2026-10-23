@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	_ "embed"
+	"embed"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -18,8 +18,11 @@ import (
 	wr "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-//go:embed sample/langley-sample.zip
-var sampleZip []byte
+//go:embed sample/*.zip
+var samples embed.FS
+
+// samplePlaces are the bundled extracts, each with a point inside it as the import's location hint.
+var samplePlaces = map[string]Pt{"langley": {-122.6, 49.15}, "port-huron": {-82.43, 42.98}}
 
 // App is bound to the front end: every exported method is callable as window.go.main.App.<Method>.
 type App struct {
@@ -544,15 +547,21 @@ func writeAtomic(path string, data []byte) error {
 	return os.Rename(tmp, path)
 }
 
-// LoadSample adds the bundled Township of Langley extract (Fort Langley and surrounding farmland).
-func (a *App) LoadSample() ImportResult {
+// LoadSample adds a bundled extract: "langley" (Township of Langley: Walnut Grove, Fort Langley and
+// the farmland between) or "port-huron" (City of Port Huron, Michigan).
+func (a *App) LoadSample(name string) ImportResult {
+	at, ok := samplePlaces[name]
+	data, err := samples.ReadFile("sample/" + name + "-sample.zip")
+	if !ok || err != nil {
+		return ImportResult{Errors: []string{"There is no sample called " + name + "."}}
+	}
 	dir := filepath.Join(os.TempDir(), "pracre-sample")
 	os.MkdirAll(dir, 0o755)
-	p := filepath.Join(dir, "langley-sample.zip")
-	if err := os.WriteFile(p, sampleZip, 0o644); err != nil {
+	p := filepath.Join(dir, name+"-sample.zip")
+	if err := os.WriteFile(p, data, 0o644); err != nil {
 		return ImportResult{Errors: []string{err.Error()}}
 	}
-	return a.Import([]string{p}, -122.6, 49.15)
+	return a.Import([]string{p}, at[0], at[1])
 }
 
 // ---- exports that only need a file name

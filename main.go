@@ -71,7 +71,9 @@ func (a *App) menu() *menu.Menu {
 	file.AddText("Save Project As…", keys.Combo("s", keys.CmdOrCtrlKey, keys.ShiftKey), fire("saveas"))
 	file.AddSeparator()
 	file.AddText("Import Data…", keys.CmdOrCtrl("i"), fire("import"))
-	file.AddText("Load Sample Data (Township of Langley)", nil, fire("sample"))
+	sample := file.AddSubmenu("Sample Data")
+	sample.AddText("Township of Langley (2024)", nil, fire("sample"))
+	sample.AddText("Port Huron (2024)", nil, fire("sample-porthuron"))
 	if runtime.GOOS != "darwin" {
 		file.AddSeparator()
 		file.AddText("Exit", keys.OptionOrAlt("f4"), func(*menu.CallbackData) { wr.Quit(a.ctx) })
