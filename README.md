@@ -98,6 +98,10 @@ blender -b --factory-startup -P art/render_art.py
 python art/postprocess.py
 ```
 
+## AI use disclosure
+
+Pracre was built using [Claude Code](https://claude.com/claude-code) with Claude Opus 5.5.
+
 ## Credits
 
 Base maps © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, served by [OpenFreeMap](https://openfreemap.org) and the OpenStreetMap Foundation. Map rendering by [MapLibre GL JS](https://maplibre.org) (BSD-3-Clause). Excel import by [Excelize](https://github.com/xuri/excelize) (BSD-3-Clause).
